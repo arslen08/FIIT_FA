@@ -269,45 +269,42 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     public IEnumerable<TreeEntry<TKey, TValue>>  InOrderReverse() => new TreeIterator(this, TraversalStrategy.InOrderReverse);
     public IEnumerable<TreeEntry<TKey, TValue>>  PreOrderReverse() => new TreeIterator(this, TraversalStrategy.PreOrderReverse);
     public IEnumerable<TreeEntry<TKey, TValue>>  PostOrderReverse() => new TreeIterator(this, TraversalStrategy.PostOrderReverse);
-    
-    /// <summary>
-    /// Внутренний класс-итератор. 
-    /// Реализует паттерн Iterator вручную, без yield return (ban).
-    /// </summary>
+
     private struct TreeIterator : 
         IEnumerable<TreeEntry<TKey, TValue>>,
         IEnumerator<TreeEntry<TKey, TValue>>
     {
-        // probably add something here
         private readonly BinarySearchTreeBase<TKey, TValue, TNode> _tree;
+        private readonly TraversalStrategy _strategy;
         private TNode? _current;
         private readonly Stack<TNode> _stack;
-        private readonly TraversalStrategy _strategy; // or make it template parameter?
-        
+        private TNode? _lastVisited; 
+
         public TreeIterator(BinarySearchTreeBase<TKey, TValue, TNode> tree, TraversalStrategy strategy)
         {
             _tree = tree;
-            _current = null;
-            _stack = new Stack<TNode>();
             _strategy = strategy;
+            _stack = new Stack<TNode>();
+            _current = null;
+            _lastVisited = null;
             Reset();
         }
 
         public IEnumerator<TreeEntry<TKey, TValue>> GetEnumerator() => this;
         IEnumerator IEnumerable.GetEnumerator() => this;
-        
-        public TreeEntry<TKey, TValue> Current {get; private set; }
+
+        public TreeEntry<TKey, TValue> Current { get; private set; }
         object IEnumerator.Current => Current;
-        
+
         public bool MoveNext()
         {
             return _strategy switch
             {
-                TraversalStrategy.InOrder => MoveNextInOrder(),
-                TraversalStrategy.PreOrder => MoveNextPreOrder(),
-                TraversalStrategy.PostOrder => MoveNextPostOrder(),
-                TraversalStrategy.InOrderReverse => MoveNextInOrderReverse(),
-                TraversalStrategy.PreOrderReverse => MoveNextPreOrderReverse(),
+                TraversalStrategy.InOrder          => MoveNextInOrder(),
+                TraversalStrategy.PreOrder         => MoveNextPreOrder(),
+                TraversalStrategy.PostOrder        => MoveNextPostOrder(),
+                TraversalStrategy.InOrderReverse   => MoveNextInOrderReverse(),
+                TraversalStrategy.PreOrderReverse  => MoveNextPreOrderReverse(),
                 TraversalStrategy.PostOrderReverse => MoveNextPostOrderReverse(),
                 _ => false
             };
@@ -328,31 +325,51 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
                 _current = _current.Right;
                 return true;
             }
-
             return false;
         }
-        
+
         private bool MoveNextPreOrder()
         {
-            if (_current == null && _stack.Count == 0) { return false; }
+            if (_current == null && _stack.Count == 0) return false;
 
             if (_current == null)
-            {
-                _current = _stack.Pop(); 
-            }
+                _current = _stack.Pop();
 
             Current = new TreeEntry<TKey, TValue>(_current.Key, _current.Value, GetDepth(_current));
-            if (_current.Right != null)
-            {
-                _stack.Push(_current.Right);
-            }
 
-            if (_current.Left != null)
-            {
-                _stack.Push(_current.Left);
-            }
+            if (_current.Right != null) _stack.Push(_current.Right);
+            if (_current.Left != null)  _stack.Push(_current.Left);
+
             _current = null;
             return true;
+        }
+
+        private bool MoveNextPostOrder()
+        {
+            while (_current != null || _stack.Count > 0)
+            {
+                if (_current != null)
+                {
+                    _stack.Push(_current);
+                    _current = _current.Left;
+                }
+                else
+                {
+                    TNode peek = _stack.Peek();
+
+                    if (peek.Right != null && _lastVisited != peek.Right)
+                    {
+                        _current = peek.Right;
+                    }
+                    else
+                    {
+                        _lastVisited = _stack.Pop();
+                        Current = new TreeEntry<TKey, TValue>(_lastVisited.Key, _lastVisited.Value, GetDepth(_lastVisited));
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private bool MoveNextInOrderReverse()
@@ -370,61 +387,74 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
                 _current = _current.Left;
                 return true;
             }
-
             return false;
         }
 
         private bool MoveNextPreOrderReverse()
         {
-            if (_current == null && _stack.Count == 0) { return false; }
+            if (_current == null && _stack.Count == 0) return false;
 
             if (_current == null)
-            {
-                _current = _stack.Pop(); 
-            }
+                _current = _stack.Pop();
 
             Current = new TreeEntry<TKey, TValue>(_current.Key, _current.Value, GetDepth(_current));
-            if (_current.Left != null)
-            {
-                _stack.Push(_current.Left);
-            }
 
-            if (_current.Right != null)
-            {
-                _stack.Push(_current.Right);
-            }
+            if (_current.Left != null)  _stack.Push(_current.Left);
+            if (_current.Right != null) _stack.Push(_current.Right);
 
             _current = null;
             return true;
         }
 
-        private bool MoveNextPostOrder() => throw new NotImplementedException("PostOrder traversal will be implemented if tests require it");
-        private bool MoveNextPostOrderReverse() => throw new NotImplementedException("PostOrderReverse traversal will be implemented if tests require it");
+        private bool MoveNextPostOrderReverse()
+        {
+            while (_current != null || _stack.Count > 0)
+            {
+                if (_current != null)
+                {
+                    _stack.Push(_current);
+                    _current = _current.Right;   
+                }
+                else
+                {
+                    TNode peek = _stack.Peek();
+
+                    if (peek.Left != null && _lastVisited != peek.Left)
+                    {
+                        _current = peek.Left;
+                    }
+                    else
+                    {
+                        _lastVisited = _stack.Pop();
+                        Current = new TreeEntry<TKey, TValue>(_lastVisited.Key, _lastVisited.Value, GetDepth(_lastVisited));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
 
         private int GetDepth(TNode node)
         {
             int depth = 0;
-            TNode? current = node;
-            while (current?.Parent != null)
+            TNode? curr = node;
+            while (curr?.Parent != null)
             {
                 depth++;
-                current = current.Parent;
+                curr = curr.Parent;
             }
-
             return depth;
         }
 
         public void Reset()
         {
             _stack.Clear();
-            _current = _tree.Root; 
+            _current = _tree.Root;
+            _lastVisited = null;
             Current = default;
         }
-        
-        public void Dispose()
-        {
-            // TODO release managed resources here
-        }
+
+        public void Dispose() { }
     }
     
     private enum TraversalStrategy { InOrder, PreOrder, PostOrder, InOrderReverse, PreOrderReverse, PostOrderReverse }
