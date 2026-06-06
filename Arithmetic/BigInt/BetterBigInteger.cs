@@ -11,6 +11,9 @@ public sealed class BetterBigInteger : IBigInteger
     private const ulong Base = 1UL << 32;
     private const uint SignMask = 0x8000_0000u;
 
+    private const int KaratsubaThreshold = 32;   
+    private const int FftThreshold = 1024;        
+
     private int _signBit;
 
     private uint _smallValue; // Если число маленькое, храним его прямо в этом поле, а _data == null.
@@ -157,7 +160,6 @@ public sealed class BetterBigInteger : IBigInteger
         return hash.ToHashCode();
     }
 
-
     public static BetterBigInteger operator +(BetterBigInteger a, BetterBigInteger b)
     {
         ArgumentNullException.ThrowIfNull(a);
@@ -212,8 +214,12 @@ public sealed class BetterBigInteger : IBigInteger
 
     private static IMultiplier SelectMultiplier(BetterBigInteger a, BetterBigInteger b)
     {
-        _ = a;
-        _ = b;
+        int size = Math.Max(a.GetDigits().Length, b.GetDigits().Length);
+
+        if (size >= FftThreshold)
+            return new FftMultiplier();
+        if (size >= KaratsubaThreshold)
+            return new KaratsubaMultiplier();
         return new SimpleMultiplier();
     }
 
@@ -248,6 +254,7 @@ public sealed class BetterBigInteger : IBigInteger
         ReadOnlySpan<uint> bm = b.GetDigits();
         if (CompareMagnitude(am, bm) < 0)
             return a; 
+
         (_, uint[] remainder) = DivModMagnitude(am, bm);
         return Create(remainder, a.IsNegative); 
     }
@@ -317,7 +324,7 @@ public sealed class BetterBigInteger : IBigInteger
             return a.IsZero ? Zero : a;
         if (bits > int.MaxValue)
             throw new OverflowException("Слишком большой сдвиг влево.");
-        
+
         uint[] mag = ShiftLeftBits(a.GetDigits(), (int)bits);
         return Create(mag, a.IsNegative);
     }
@@ -328,6 +335,7 @@ public sealed class BetterBigInteger : IBigInteger
             return a.IsZero ? Zero : a;
         if (bits > int.MaxValue)
             return a.IsNegative ? Create([1u], true) : Zero; 
+
         int b = (int)bits;
         ReadOnlySpan<uint> mag = a.GetDigits();
         uint[] shifted = ShiftRightBits(mag, b);
@@ -424,6 +432,7 @@ public sealed class BetterBigInteger : IBigInteger
         result[n] = (uint)carry;
         return Trim(result);
     }
+
     private static uint[] SubtractMagnitude(ReadOnlySpan<uint> a, ReadOnlySpan<uint> b)
     {
         int la = EffectiveLength(a);
@@ -494,6 +503,7 @@ public sealed class BetterBigInteger : IBigInteger
         }
         return (Trim(q), (uint)rem);
     }
+
     private static (uint[] quotient, uint[] remainder) DivModMagnitude(ReadOnlySpan<uint> uIn, ReadOnlySpan<uint> vIn)
     {
         int m = EffectiveLength(uIn);
@@ -509,7 +519,7 @@ public sealed class BetterBigInteger : IBigInteger
             return (q1, [rem]);
         }
 
-        int s = BitOperations.LeadingZeroCount(vIn[n - 1]);
+        int s = BitOperations.LeadingZeroCount(vIn[n - 1]); 
         uint[] vn = PadTo(ShiftLeftBits(vIn[..n], s), n);
         uint[] un = PadTo(ShiftLeftBits(uIn[..m], s), m + 1);
 
